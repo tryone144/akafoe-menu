@@ -1,0 +1,6 @@
+[package]
+name = "akafoe-menu"
+version = "0.0.1"
+authors = ["Bernd Busse <bernd@busse-net.de>"]
+
+[dependencies]

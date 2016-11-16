@@ -1,0 +1,5 @@
+# build directory
+target
+
+# vim swapfiles
+*.sw[po]
