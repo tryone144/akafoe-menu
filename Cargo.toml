@@ -4,3 +4,7 @@ version = "0.0.1"
 authors = ["Bernd Busse <bernd@busse-net.de>"]
 
 [dependencies]
+quick-xml = "0.4.1"
+regex = "0.1"
+reqwest = "0.1"
+time = "0.1"
