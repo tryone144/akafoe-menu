@@ -7,12 +7,17 @@ extern crate regex;
 extern crate reqwest;
 extern crate time;
 
+mod etree;
+
 use std::io::BufReader;
 use std::fmt;
 use std::str;
+use std::process;
 
-use quick_xml::{XmlReader, Event};
+use etree::ETBuilder;
+use quick_xml::XmlReader;
 use regex::Regex;
+
 
 static FEED_URL_MENSA: &'static str = "http://www.akafoe.\
                                        de/gastronomie/speisepläne-der-mensen/ruhr-universitaet-bochum/?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
@@ -23,106 +28,6 @@ static FEED_URL_QWEST: &'static str = "http://www.akafoe.\
 static FEED_URL_HENKELMANN: &'static str = "http://www.akafoe.\
                                             de/gastronomie/henkelmann/?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
 
-
-enum ETNode {
-    ElementNode(ETElement),
-    TextNode(String),
-}
-
-impl fmt::Display for ETNode {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            ETNode::ElementNode(ref element) => fmt::Display::fmt(element, f),
-            ETNode::TextNode(ref text) => fmt::Display::fmt(text, f),
-        }
-    }
-}
-
-struct ETElement {
-    name: String,
-    children: Vec<ETNode>,
-}
-
-impl ETElement {
-    pub fn get_children_ref(&self) -> Vec<&ETElement> {
-        self.children
-            .iter()
-            .filter_map(|c| match *c {
-                ETNode::ElementNode(ref e) => Some(e),
-                ETNode::TextNode(_) => None,
-            })
-            .collect::<Vec<&ETElement>>()
-    }
-
-    pub fn get_text(&self) -> String {
-        self.children
-            .iter()
-            .filter_map(|c| match *c {
-                ETNode::ElementNode(_) => None,
-                ETNode::TextNode(ref text) => Some(text),
-            })
-            .fold(String::new(), |mut res, text| {
-                if res.len() > 0 {
-                    res.push(' ');
-                }
-                res.push_str(text.as_str());
-                res
-            })
-    }
-}
-
-impl fmt::Display for ETElement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "<{}>", self.name)
-    }
-}
-
-struct ETBuilder {
-    stack: Vec<ETElement>,
-}
-
-impl ETBuilder {
-    pub fn new() -> Self {
-        ETBuilder { stack: Vec::new() }
-    }
-
-    pub fn handle_event<T>(&mut self, ev: Result<Event, T>) -> Option<Result<ETElement, T>> {
-        let ev = match ev {
-            Ok(event) => event,
-            Err(e) => return Some(Err(e)),
-        };
-
-        match ev {
-            Event::Start(ref e) => {
-                let elem = ETElement {
-                    name: str::from_utf8(e.name()).unwrap().to_owned(),
-                    children: Vec::new(),
-                };
-                self.stack.push(elem);
-            }
-            Event::End(ref e) => {
-                let elem = self.stack.pop().unwrap_or_else(|| panic!("improper nesting"));
-                if elem.name != str::from_utf8(e.name()).unwrap() {
-                    panic!("improper nesting");
-                } else {
-                    match self.stack.last_mut() {
-                        Some(parent) => parent.children.push(ETNode::ElementNode(elem)),
-                        None => return Some(Ok(elem)),
-                    }
-                }
-            }
-            Event::Text(ref e) => {
-                if let Some(current) = self.stack.last_mut() {
-                    current.children
-                        .push(ETNode::TextNode(str::from_utf8(e.content()).unwrap().to_owned()));
-                }
-            }
-            _ => {}
-        }
-
-        None
-    }
-}
 
 struct Meal {
     pub desc: String,
@@ -305,13 +210,22 @@ fn main() {
     println!("");
 
     for facility in vec![FEED_URL_MENSA, FEED_URL_BISTRO, FEED_URL_QWEST, FEED_URL_HENKELMANN] {
-        let response = reqwest::get(facility).expect("Cannot load request");
+        let response = match reqwest::get(facility) {
+            Ok(resp) => resp,
+            Err(e) => {
+                println!("Unable to load menu: {}", e.to_string());
+                process::exit(1);
+            }
+        };
         let reader = BufReader::new(response);
         let menu = Menu::from_reader(reader);
 
         let title = format!(":: {}", menu);
         println!("{}\n{:=<width$}", title, "=", width = title.len());
         for sec in menu.sections.iter() {
+            if sec.meals.len() == 0 {
+                continue;
+            }
             println!("  :: {}", sec);
             for meal in sec.meals.iter() {
                 println!("     * {}", meal);
