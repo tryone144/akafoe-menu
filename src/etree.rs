@@ -25,10 +25,10 @@
 //! Parse XML into basic ElementTree representation.
 //!
 
-use std::fmt;
-use std::str;
+use std::{default, fmt, io, str};
 
-use quick_xml::Event;
+use quick_xml::{Reader, Error};
+use quick_xml::events::{Event, BytesText};
 
 
 pub enum ETNode {
@@ -44,6 +44,7 @@ impl fmt::Display for ETNode {
         }
     }
 }
+
 
 pub struct ETElement {
     pub name: String,
@@ -78,11 +79,21 @@ impl ETElement {
     }
 }
 
+impl default::Default for ETElement {
+    fn default() -> Self {
+        ETElement {
+            name: "empty".to_owned(),
+            children: Vec::new(),
+        }
+    }
+}
+
 impl fmt::Display for ETElement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<{}>", self.name)
     }
 }
+
 
 pub struct ETBuilder {
     stack: Vec<ETElement>,
@@ -93,35 +104,46 @@ impl ETBuilder {
         ETBuilder { stack: Vec::new() }
     }
 
-    pub fn handle_event<T>(&mut self, ev: Result<Event, T>) -> Option<Result<ETElement, T>> {
-        let ev = match ev {
-            Ok(event) => event,
-            Err(e) => return Some(Err(e)),
-        };
-
+    pub fn handle_event<T: io::BufRead>(&mut self, parser: &Reader<T>, ev: Event) -> Option<ETElement> {
         match ev {
-            Event::Start(ref e) => {
+            Event::Start(ref ev) => {
                 let elem = ETElement {
-                    name: str::from_utf8(e.name()).unwrap().to_owned(),
+                    name: str::from_utf8(ev.name()).expect("Get element name of start tag").to_owned(),
                     children: Vec::new(),
                 };
                 self.stack.push(elem);
             }
-            Event::End(ref e) => {
+            Event::End(ref ev) => {
                 let elem = self.stack.pop().unwrap_or_else(|| panic!("improper nesting"));
-                if elem.name != str::from_utf8(e.name()).unwrap() {
+                if elem.name != str::from_utf8(ev.name()).expect("Get element name of end tag") {
                     panic!("improper nesting");
                 } else {
                     match self.stack.last_mut() {
                         Some(parent) => parent.children.push(ETNode::ElementNode(elem)),
-                        None => return Some(Ok(elem)),
+                        None => return Some(elem),
                     }
                 }
             }
-            Event::Text(ref e) => {
+            Event::Text(ref ev) => {
                 if let Some(current) = self.stack.last_mut() {
-                    current.children
-                        .push(ETNode::TextNode(str::from_utf8(e.content()).unwrap().to_owned()));
+                    let node = ev.unescaped()
+                        .map(|x| x.into_owned())
+                        .or_else(|err| match err {
+                            Error::EscapeError(_) => {
+                                let mut new = Vec::new();
+                                ev.escaped().iter().for_each(|x| {
+                                    new.push(*x);
+                                    if char::from(*x) == '&' {
+                                        let mut esc = vec!('a' as u8, 'm' as u8, 'p' as u8, ';' as u8);
+                                        new.append(&mut esc);
+                                    }
+                                });
+
+                                BytesText::from_escaped(new).unescaped().map(|x| x.into_owned())
+                            },
+                            _ => Err(err),
+                        }).expect("Unescaped text node");
+                    current.children.push(ETNode::TextNode(parser.decode(node.as_ref()).into_owned()));
                 }
             }
             _ => {}

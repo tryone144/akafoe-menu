@@ -33,23 +33,22 @@ extern crate time;
 mod etree;
 
 use std::io::BufReader;
-use std::fmt;
-use std::str;
-use std::process;
+use std::{fmt, process, str};
 
-use etree::ETBuilder;
-use quick_xml::XmlReader;
+use etree::{ETBuilder, ETElement};
+use quick_xml::Reader;
+use quick_xml::events::Event;
 use regex::Regex;
 
 
-static FEED_URL_MENSA: &'static str = "http://www.akafoe.\
-                                       de/gastronomie/speisepläne-der-mensen/ruhr-universitaet-bochum/?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_BISTRO: &'static str = "http://www.akafoe.\
-                                        de/gastronomie/speisepläne-der-mensen/bistro-der-ruhr-universitaet-bochum/?mid=37?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_QWEST: &'static str = "http://www.akafoe.\
-                                       de/gastronomie/gastronomien/q-west/?mid=38?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_HENKELMANN: &'static str = "http://www.akafoe.\
-                                            de/gastronomie/henkelmann/?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_MENSA: &'static str = "http://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
+                                       ?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_BISTRO: &'static str = "http://www.akafoe.de/gastronomie/speiseplaene-der-mensen/bistro-der-ruhr-universitaet-bochum/\
+                                        ?mid=37?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_QWEST: &'static str = "http://www.akafoe.de/gastronomie/gastronomien/q-west/\
+                                       ?mid=38?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_HENKELMANN: &'static str = "http://www.akafoe.de/gastronomie/henkelmann/\
+                                            ?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
 
 
 struct Meal {
@@ -67,24 +66,27 @@ impl Meal {
         let captures =
             Regex::new(r"^([^()]+\S)\s+((?:\(.*\)\s+){0,2})([\d,]+)\s*EUR\s*-\s*([\d,]+)\s*EUR$")
                 .unwrap()
-                .captures(description.as_str());
+                .captures(description.as_ref());
 
-        let name = match captures.as_ref().and_then(|c| c.at(1)) {
-            Some(name) => Regex::new(r"(?:\s*)([,.:])(?:\s*)").unwrap().replace_all(name, "$1 "),
+        let name = match captures.as_ref().and_then(|c| c.get(1)) {
+            Some(name) => Regex::new(r"(?:\s*)([,.:])(?:\s*)").unwrap().replace_all(name.as_str(), "$1 ").into_owned(),
             None => {
                 println!("Warning: Cannot get description of menu!");
                 "No description".to_owned()
             }
         };
-        let info = captures.as_ref().and_then(|c| c.at(2)).unwrap_or("");
+        let info = captures.as_ref()
+            .and_then(|c| c.get(2))
+            .map(|c| c.as_str())
+            .unwrap_or("");
         let price_student = captures.as_ref()
-            .and_then(|c| c.at(3))
-            .map(|p| price_filter.replace_all(p, "."))
+            .and_then(|c| c.get(3))
+            .map(|p| price_filter.replace_all(p.as_str(), "."))
             .and_then(|p| p.parse::<f32>().ok())
             .unwrap_or(0.0);
         let price_regular = captures.as_ref()
-            .and_then(|c| c.at(4))
-            .map(|p| price_filter.replace_all(p, "."))
+            .and_then(|c| c.get(4))
+            .map(|p| price_filter.replace_all(p.as_str(), "."))
             .and_then(|p| p.parse::<f32>().ok())
             .unwrap_or(0.0);
 
@@ -116,7 +118,7 @@ struct Section {
 impl Section {
     pub fn new(title: &str) -> Self {
         Section {
-            title: Regex::new(r"\s+").unwrap().replace_all(title, " "),
+            title: Regex::new(r"\s+").unwrap().replace_all(title, " ").into_owned(),
             meals: Vec::new(),
         }
     }
@@ -141,17 +143,28 @@ impl Menu {
         let now = time::now();
         let today = time::strftime("%y-%m-%d", &now).unwrap();
 
-        let parser = XmlReader::from_reader(reader).trim_text(true);
+        let mut parser = Reader::from_reader(reader);
         let mut builder = ETBuilder::new();
+        let mut buf = Vec::new();
+        parser.trim_text(true);
 
-        let feed = match parser.filter_map(|ev| builder.handle_event(ev)).next().unwrap() {
-            Ok(element) => element,
-            Err((e, pos)) => panic!("Error while parsing at {}: {}", pos, e),
-        };
+        let mut feed = ETElement::default();
+        loop {
+            match parser.read_event(&mut buf) {
+                Err(e) => panic!("Ooops an error occured! {:?}", e),
+                Ok(Event::Eof) => break,
+                Ok(ev) => {
+                    if let Some(elem) = builder.handle_event(&parser, ev) {
+                        feed = elem;
+                    }
+                },
+            }
+            buf.clear();
+        }
+        
         let feed_items = feed.get_children_ref();
-
         let title = match feed_items.iter().find(|e| e.name == "title").map(|e| e.get_text()) {
-            Some(text) => Regex::new(r"\s+").unwrap().replace_all(text.as_str(), " "),
+            Some(text) => Regex::new(r"\s+").unwrap().replace_all(text.as_str(), " ").into_owned(),
             None => {
                 println!("Warning: Menu has no title!");
                 "Unkown".to_owned()
@@ -164,7 +177,7 @@ impl Menu {
 
             let date = match entry_items.iter()
                 .find(|e| e.name == "id")
-                .map(|e| date_exp.replace_all(e.get_text().as_str(), "$1")) {
+                .map(|e| date_exp.replace_all(e.get_text().as_ref(), "$1").into_owned()) {
                 Some(date) => date.clone(),
                 None => {
                     println!("Warning: Menu is missing date!");
@@ -233,6 +246,7 @@ fn main() {
     println!("");
 
     for facility in vec![FEED_URL_MENSA, FEED_URL_BISTRO, FEED_URL_QWEST, FEED_URL_HENKELMANN] {
+    //for facility in vec![FEED_URL_QWEST, FEED_URL_HENKELMANN] {
         let response = match reqwest::get(facility) {
             Ok(resp) => resp,
             Err(e) => {
@@ -240,6 +254,13 @@ fn main() {
                 process::exit(1);
             }
         };
+        //println!("The response: {:?}", response);
+        //use std::io::Read;
+        //let mut reader = BufReader::new(response);
+        //let mut buf = Vec::new();
+        //reader.read_to_end(&mut buf);
+        //println!("    {}", String::from_utf8(buf).unwrap());
+        //return;
         let reader = BufReader::new(response);
         let menu = Menu::from_reader(reader);
 
