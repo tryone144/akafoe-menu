@@ -41,13 +41,13 @@ use quick_xml::events::Event;
 use regex::Regex;
 
 
-static FEED_URL_MENSA: &'static str = "http://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
+static FEED_URL_MENSA: &'static str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
                                        ?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_BISTRO: &'static str = "http://www.akafoe.de/gastronomie/speiseplaene-der-mensen/bistro-der-ruhr-universitaet-bochum/\
+static FEED_URL_BISTRO: &'static str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/bistro-der-ruhr-universitaet-bochum/\
                                         ?mid=37?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_QWEST: &'static str = "http://www.akafoe.de/gastronomie/gastronomien/q-west/\
+static FEED_URL_QWEST: &'static str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/q-west/\
                                        ?mid=38?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_HENKELMANN: &'static str = "http://www.akafoe.de/gastronomie/henkelmann/\
+static FEED_URL_HENKELMANN: &'static str = "https://www.akafoe.de/gastronomie/henkelmann/\
                                             ?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
 
 
@@ -246,7 +246,6 @@ fn main() {
     println!("");
 
     for facility in vec![FEED_URL_MENSA, FEED_URL_BISTRO, FEED_URL_QWEST, FEED_URL_HENKELMANN] {
-    //for facility in vec![FEED_URL_QWEST, FEED_URL_HENKELMANN] {
         let response = match reqwest::get(facility) {
             Ok(resp) => resp,
             Err(e) => {

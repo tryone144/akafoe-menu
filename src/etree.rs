@@ -143,7 +143,8 @@ impl ETBuilder {
                             },
                             _ => Err(err),
                         }).expect("Unescaped text node");
-                    current.children.push(ETNode::TextNode(parser.decode(node.as_ref()).into_owned()));
+                    let text = parser.decode(node.as_ref()).expect("Cannot decode text node");
+                    current.children.push(ETNode::TextNode(text.to_owned()));
                 }
             }
             _ => {}
