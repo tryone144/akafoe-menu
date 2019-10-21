@@ -70,7 +70,7 @@ impl ETElement {
                 ETNode::TextNode(ref text) => Some(text),
             })
             .fold(String::new(), |mut res, text| {
-                if res.len() > 0 {
+                if !res.is_empty() {
                     res.push(' ');
                 }
                 res.push_str(text.as_str());
@@ -134,7 +134,7 @@ impl ETBuilder {
                                 ev.escaped().iter().for_each(|x| {
                                     new.push(*x);
                                     if char::from(*x) == '&' {
-                                        let mut esc = vec!('a' as u8, 'm' as u8, 'p' as u8, ';' as u8);
+                                        let mut esc = vec!(b'a', b'm', b'p', b';');
                                         new.append(&mut esc);
                                     }
                                 });

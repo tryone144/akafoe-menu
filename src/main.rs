@@ -25,6 +25,8 @@
 //! Get today's menus from http://www.akafoe.de
 //!
 
+#![warn(clippy::all)]
+
 extern crate quick_xml;
 extern crate regex;
 extern crate reqwest;
@@ -41,14 +43,14 @@ use quick_xml::events::Event;
 use regex::Regex;
 
 
-static FEED_URL_MENSA: &'static str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
-                                       ?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_BISTRO: &'static str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/bistro-der-ruhr-universitaet-bochum/\
-                                        ?mid=37?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_QWEST: &'static str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/q-west/\
-                                       ?mid=38?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_HENKELMANN: &'static str = "https://www.akafoe.de/gastronomie/henkelmann/\
-                                            ?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_MENSA: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
+                               ?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_BISTRO: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/bistro-der-ruhr-universitaet-bochum/\
+                                ?mid=37?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_QWEST: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/q-west/\
+                               ?mid=38?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_HENKELMANN: &str = "https://www.akafoe.de/gastronomie/henkelmann/\
+                                    ?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
 
 
 struct Meal {
@@ -61,7 +63,6 @@ struct Meal {
 impl Meal {
     fn new(description: &str) -> Self {
         let description = Regex::new(r"\s+").unwrap().replace_all(description, " ");
-        let price_filter = Regex::new(r",").unwrap();
 
         let captures =
             Regex::new(r"^([^()]+\S)\s+((?:\(.*\)\s+){0,2})([\d,]+)\s*EUR\s*-\s*([\d,]+)\s*EUR$")
@@ -81,20 +82,20 @@ impl Meal {
             .unwrap_or("");
         let price_student = captures.as_ref()
             .and_then(|c| c.get(3))
-            .map(|p| price_filter.replace_all(p.as_str(), "."))
+            .map(|p| p.as_str().replace(",", "."))
             .and_then(|p| p.parse::<f32>().ok())
             .unwrap_or(0.0);
         let price_regular = captures.as_ref()
             .and_then(|c| c.get(4))
-            .map(|p| price_filter.replace_all(p.as_str(), "."))
+            .map(|p| p.as_str().replace(",", "."))
             .and_then(|p| p.parse::<f32>().ok())
             .unwrap_or(0.0);
 
         Meal {
             desc: name.trim().to_owned(),
             info: info.trim().to_owned(),
-            price_student: price_student,
-            price_regular: price_regular,
+            price_student,
+            price_regular,
         }
     }
 }
@@ -203,7 +204,7 @@ impl Menu {
                     let sec_title = item.get_children_ref()
                         .first()
                         .map(|e| e.get_text())
-                        .unwrap_or("Unkown".to_owned());
+                        .unwrap_or_else(|| "Unkown".to_owned());
                     sections.push(Section::new(sec_title.as_str()));
                 } else if item.name == "ul" {
                     if let Some(sec) = sections.last_mut() {
@@ -219,14 +220,14 @@ impl Menu {
             break;
         }
 
-        if sections.len() == 0 {
+        if sections.is_empty() {
             println!("Warning: no meal section found for {}!", today);
         }
 
         Menu {
-            title: title,
+            title,
             date: time::strftime("%d.%m.%y", &now).unwrap(),
-            sections: sections,
+            sections,
         }
     }
 }
@@ -243,10 +244,10 @@ fn main() {
     println!(r" / __ `/ //_/ __ `/ /_/ __ \/ _ \   / __ `__ \/ _ \/ __ \/ / / /");
     println!(r"/ /_/ / ,< / /_/ / __/ /_/ /  __/  / / / / / /  __/ / / / /_/ /");
     println!(r"\__,_/_/|_|\__,_/_/  \____/\___/  /_/ /_/ /_/\___/_/ /_/\__,_/");
-    println!("");
+    println!();
 
-    for facility in vec![FEED_URL_MENSA, FEED_URL_BISTRO, FEED_URL_QWEST, FEED_URL_HENKELMANN] {
-        let response = match reqwest::get(facility) {
+    for facility in &[FEED_URL_MENSA, FEED_URL_BISTRO, FEED_URL_QWEST, FEED_URL_HENKELMANN] {
+        let response = match reqwest::get(*facility) {
             Ok(resp) => resp,
             Err(e) => {
                 println!("Unable to load menu: {}", e.to_string());
@@ -266,7 +267,7 @@ fn main() {
         let title = format!(":: {}", menu);
         println!("{}\n{:=<width$}", title, "=", width = title.len());
         for sec in menu.sections.iter() {
-            if sec.meals.len() == 0 {
+            if sec.meals.is_empty() {
                 continue;
             }
             println!("  :: {}", sec);
@@ -274,6 +275,6 @@ fn main() {
                 println!("     * {}", meal);
             }
         }
-        println!("");
+        println!();
     }
 }
