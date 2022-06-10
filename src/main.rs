@@ -44,13 +44,13 @@ use regex::Regex;
 
 
 static FEED_URL_MENSA: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
-                               ?mid=1?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_BISTRO: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/bistro-der-ruhr-universitaet-bochum/\
-                                ?mid=37?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_QWEST: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/q-west/\
-                               ?mid=38?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
-static FEED_URL_HENKELMANN: &str = "https://www.akafoe.de/gastronomie/henkelmann/\
-                                    ?mid=21&tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+                               ?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_BISTRO: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/rote-bete/\
+                                ?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+//static FEED_URL_QWEST: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/q-west/\
+//                               ?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
+static FEED_URL_HENKELMANN: &str = "https://www.akafoe.de/pfannengerichte/\
+                                    ?tx_akafoespeiseplan_mensadetails%5Baction%5D=feed&tx_akafoespeiseplan_mensadetails%5Bcontroller%5D=AtomFeed";
 
 
 struct Meal {
@@ -65,7 +65,7 @@ impl Meal {
         let description = Regex::new(r"\s+").unwrap().replace_all(description, " ");
 
         let captures =
-            Regex::new(r"^([^()]+\S)\s+((?:\(.*\)\s+){0,2})([\d,]+)\s*EUR\s*-\s*([\d,]+)\s*EUR$")
+            Regex::new(r"^([^()]+\S)\s+((?:\(.*\)\s+){0,2})([\d,-]+)\s*EUR\s*-\s*([\d,-]+)\s*EUR$")
                 .unwrap()
                 .captures(description.as_ref());
 
@@ -82,12 +82,12 @@ impl Meal {
             .unwrap_or("");
         let price_student = captures.as_ref()
             .and_then(|c| c.get(3))
-            .map(|p| p.as_str().replace(",", "."))
+            .map(|p| p.as_str().replace(',', "."))
             .and_then(|p| p.parse::<f32>().ok())
             .unwrap_or(0.0);
         let price_regular = captures.as_ref()
             .and_then(|c| c.get(4))
-            .map(|p| p.as_str().replace(",", "."))
+            .map(|p| p.as_str().replace(',', "."))
             .and_then(|p| p.parse::<f32>().ok())
             .unwrap_or(0.0);
 
@@ -162,7 +162,7 @@ impl Menu {
             }
             buf.clear();
         }
-        
+
         let feed_items = feed.get_children_ref();
         let title = match feed_items.iter().find(|e| e.name == "title").map(|e| e.get_text()) {
             Some(text) => Regex::new(r"\s+").unwrap().replace_all(text.as_str(), " ").into_owned(),
@@ -246,21 +246,29 @@ fn main() {
     println!(r"\__,_/_/|_|\__,_/_/  \____/\___/  /_/ /_/ /_/\___/_/ /_/\__,_/");
     println!();
 
-    for facility in &[FEED_URL_MENSA, FEED_URL_BISTRO, FEED_URL_QWEST, FEED_URL_HENKELMANN] {
+    for facility in &[FEED_URL_MENSA, FEED_URL_BISTRO, /*FEED_URL_QWEST,*/ FEED_URL_HENKELMANN] {
         let response = match reqwest::get(*facility) {
             Ok(resp) => resp,
             Err(e) => {
-                println!("Unable to load menu: {}", e.to_string());
+                println!("Unable to load menu: {}", e);
                 process::exit(1);
             }
         };
-        //println!("The response: {:?}", response);
-        //use std::io::Read;
-        //let mut reader = BufReader::new(response);
-        //let mut buf = Vec::new();
-        //reader.read_to_end(&mut buf);
-        //println!("    {}", String::from_utf8(buf).unwrap());
-        //return;
+
+        /*if false {
+            use std::io::Read;
+
+            println!("The response: {:?}", response);
+
+            let mut reader = BufReader::new(response);
+            let mut buf = Vec::new();
+
+            reader.read_to_end(&mut buf).unwrap();
+            println!("    {}", String::from_utf8(buf).unwrap());
+
+            return;
+        }*/
+
         let reader = BufReader::new(response);
         let menu = Menu::from_reader(reader);
 
