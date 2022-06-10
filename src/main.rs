@@ -27,11 +27,6 @@
 
 #![warn(clippy::all)]
 
-extern crate quick_xml;
-extern crate regex;
-extern crate reqwest;
-extern crate time;
-
 mod etree;
 
 use std::io::BufReader;
@@ -41,6 +36,8 @@ use etree::{ETBuilder, ETElement};
 use quick_xml::Reader;
 use quick_xml::events::Event;
 use regex::Regex;
+use time::OffsetDateTime;
+use time::macros::format_description;
 
 
 static FEED_URL_MENSA: &str = "https://www.akafoe.de/gastronomie/speiseplaene-der-mensen/ruhr-universitaet-bochum/\
@@ -141,8 +138,8 @@ impl Menu {
     pub fn from_reader<R: std::io::Read>(reader: BufReader<R>) -> Self {
         let date_exp = Regex::new(r"^.*/(\d{2}-\d{2}-\d{2})").unwrap();
 
-        let now = time::now();
-        let today = time::strftime("%y-%m-%d", &now).unwrap();
+        let now = OffsetDateTime::now_local().unwrap();
+        let today = now.format(format_description!("[year repr:last_two]-[month]-[day]")).unwrap();
 
         let mut parser = Reader::from_reader(reader);
         let mut builder = ETBuilder::new();
@@ -226,7 +223,7 @@ impl Menu {
 
         Menu {
             title,
-            date: time::strftime("%d.%m.%y", &now).unwrap(),
+            date: now.format(format_description!("[day].[month].[year repr:last_two]")).unwrap(),
             sections,
         }
     }
@@ -247,7 +244,7 @@ fn main() {
     println!();
 
     for facility in &[FEED_URL_MENSA, FEED_URL_BISTRO, /*FEED_URL_QWEST,*/ FEED_URL_HENKELMANN] {
-        let response = match reqwest::get(*facility) {
+        let response = match reqwest::blocking::get(*facility) {
             Ok(resp) => resp,
             Err(e) => {
                 println!("Unable to load menu: {}", e);
